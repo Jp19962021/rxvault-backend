@@ -8,6 +8,7 @@ const app = express();
 
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(helmet());
+app.set('trust proxy', 1);
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
   credentials: true
