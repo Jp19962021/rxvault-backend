@@ -7,7 +7,7 @@ const { sendEmail } = require('../services/emailService');
 const { authMiddleware, clinicMiddleware, adminMiddleware } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 
 // ── CREATE PAYMENT INTENT (Stripe) ───────────────────────────────────────────
 router.post('/payment-intent', authMiddleware, async (req, res) => {

@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 
 // GET pets for a customer
 router.get('/customer/:customerId', async (req, res) => {

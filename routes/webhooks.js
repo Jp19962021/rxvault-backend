@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 
 // Stripe webhook
 router.post('/stripe', express.raw({ type: 'application/json' }), async (req, res) => {

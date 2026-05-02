@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const { getProductList, getProduct } = require('../services/pcpService');
 const { authMiddleware, adminMiddleware, clinicMiddleware } = require('../middleware/auth');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 
 // ── SYNC PRODUCTS FROM PCP ────────────────────────────────────────────────────
 // Called by cron job nightly OR manually from admin panel

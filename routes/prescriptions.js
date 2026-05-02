@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { sendRxApprovedSMS } = require('../services/smsService');
 const { authMiddleware, clinicMiddleware } = require('../middleware/auth');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 
 // ── GET PENDING Rx FOR CLINIC ─────────────────────────────────────────────────
 router.get('/clinic/:clinicId/pending', clinicMiddleware, async (req, res) => {

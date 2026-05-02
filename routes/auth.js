@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { sendSMS } = require('../services/smsService');
 const { sendEmail } = require('../services/emailService');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool();
 const SALT_ROUNDS = 12;
 
 function signToken(payload) {
