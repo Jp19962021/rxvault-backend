@@ -1,9 +1,9 @@
 const router = require('express').Router();
 const { Pool } = require('pg');
-const { getProductList, getProduct } = require('../services/pcpService');
-const { authMiddleware, adminMiddleware, clinicMiddleware } = require('../middleware/auth');
-
+const { getProductList } = require('../services/pcpService');
+const { adminMiddleware, clinicMiddleware } = require('../middleware/auth');
 const pool = new Pool();
+
 router.post('/sync', adminMiddleware, async (req, res) => {
   res.json({ success: true, message: 'Sync started in background' });
   try {
@@ -29,118 +29,42 @@ router.post('/sync', adminMiddleware, async (req, res) => {
   } catch(err) { console.error('[Sync]', err.message); }
 });
 
-// ── SYNC PRODUCTS FROM PCP ────────────────────────────────────────────────────
-// Called by cron job nightly OR manually from admin panel
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── GET ALL PRODUCTS (admin) ──────────────────────────────────────────────────
-router.get('/', adminMiddleware, async (req, res) => {
-  const { search, animalType, prescriptionRequired, page = 1, limit = 50 } = req.query;
-  let where = ['item_status != $1'];
-  let params = ['Discontinued'];
-  let idx = 2;
-
-  if (search) { where.push(`(product_title ILIKE $${idx} OR keywords ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
-  if (animalType) { where.push(`animal_type ILIKE $${idx}`); params.push(`%${animalType}%`); idx++; }
-  if (prescriptionRequired !== undefined) { where.push(`prescription_required = $${idx}`); params.push(prescriptionRequired === 'true'); idx++; }
-
-  const offset = (page - 1) * limit;
+router.get('/clinic', clinicMiddleware, async (req, res) => {
+  const { clinicId } = req.user;
   const { rows } = await pool.query(`
-    SELECT * FROM products WHERE ${where.join(' AND ')}
-    ORDER BY product_title ASC LIMIT $${idx} OFFSET $${idx+1}
-  `, [...params, limit, offset]);
-
-  res.json(rows);
-});
-
-// ── GET CLINIC PRODUCTS (with clinic markup + visibility) ─────────────────────
-router.get('/clinic/:clinicId', clinicMiddleware, async (req, res) => {
-  const { clinicId } = req.params;
-  const { search, category, featured, page = 1, limit = 50 } = req.query;
-
-  let where = [`p.item_status != 'Discontinued'`];
-  let params = [clinicId];
-  let idx = 2;
-
-  if (search) { where.push(`(p.product_title ILIKE $${idx} OR p.keywords ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
-  if (category) { where.push(`p.product_type ILIKE $${idx}`); params.push(`%${category}%`); idx++; }
-  if (featured === 'true') { where.push(`cp.is_featured = TRUE`); }
-
-  const offset = (page - 1) * limit;
-  const { rows } = await pool.query(`
-    SELECT
-      p.*,
-      cp.is_visible,
-      cp.is_featured,
-      cp.markup_price,
-      COALESCE(cp.markup_price, p.unit_price * 1.6) AS selling_price
+    SELECT p.*, cp.is_visible, cp.is_featured, cp.markup_price, cp.is_hidden
     FROM products p
-    LEFT JOIN clinic_products cp ON cp.product_id = p.id AND cp.clinic_id = $1
-    WHERE ${where.join(' AND ')}
-    ORDER BY cp.is_featured DESC NULLS LAST, p.product_title ASC
-    LIMIT $${idx} OFFSET $${idx+1}
-  `, [...params, limit, offset]);
-
+    JOIN clinic_products cp ON cp.product_id = p.id
+    WHERE cp.clinic_id = $1 AND cp.is_hidden = FALSE
+    ORDER BY p.product_title
+  `, [clinicId]);
   res.json(rows);
 });
 
-// ── GET STOREFRONT PRODUCTS (public — visible only) ───────────────────────────
-router.get('/storefront/:clinicSlug', async (req, res) => {
-  const { clinicSlug } = req.params;
-  const { search, animalType, category, featured } = req.query;
+router.put('/clinic/:productId', clinicMiddleware, async (req, res) => {
+  const { clinicId } = req.user;
+  const { productId } = req.params;
+  const { is_visible, is_featured, markup_price, is_hidden } = req.body;
+  await pool.query(`
+    UPDATE clinic_products SET
+      is_visible = COALESCE($1, is_visible),
+      is_featured = COALESCE($2, is_featured),
+      markup_price = COALESCE($3, markup_price),
+      is_hidden = COALESCE($4, is_hidden)
+    WHERE clinic_id = $5 AND product_id = $6
+  `, [is_visible, is_featured, markup_price, is_hidden, clinicId, productId]);
+  res.json({ success: true });
+});
 
-  const clinic = await pool.query('SELECT id FROM clinics WHERE slug = $1 AND status = $2', [clinicSlug, 'active']);
-  if (!clinic.rows[0]) return res.status(404).json({ error: 'Clinic not found' });
-
-  const clinicId = clinic.rows[0].id;
-  let where = [`p.item_status != 'Discontinued'`, `(cp.is_visible = TRUE OR cp.is_visible IS NULL)`];
-  let params = [clinicId];
-  let idx = 2;
-
-  if (search) { where.push(`(p.product_title ILIKE $${idx} OR p.keywords ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
-  if (animalType) { where.push(`p.animal_type ILIKE $${idx}`); params.push(`%${animalType}%`); idx++; }
-  if (category) { where.push(`p.product_type ILIKE $${idx}`); params.push(`%${category}%`); idx++; }
-  if (featured === 'true') { where.push(`cp.is_featured = TRUE`); }
-
-  const { rows } = await pool.query(`
-    SELECT
-      p.id, p.item_sku, p.product_title, p.product_name, p.animal_type,
-      p.product_type, p.prescription_required, p.image_url, p.image_urls,
-      p.bullet_points, p.product_long_desc, p.flavor, p.unit_of_measure,
-      p.sku_size, p.sku_count, p.quantity_available,
-      cp.is_featured,
-      COALESCE(cp.markup_price, p.unit_price * 1.6) AS price
-    FROM products p
-    LEFT JOIN clinic_products cp ON cp.product_id = p.id AND cp.clinic_id = $1
-    WHERE ${where.join(' AND ')}
-    ORDER BY cp.is_featured DESC NULLS LAST, p.product_title ASC
-    LIMIT 100
-  `, params);
-
+router.get('/admin/all', adminMiddleware, async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM products ORDER BY product_title');
   res.json(rows);
 });
 
-// ── UPDATE CLINIC PRODUCT (toggle, price, star) ───────────────────────────────
-router.patch('/clinic/:clinicId/:productId', clinicMiddleware, async (req, res) => {
-  const { clinicId, productId } = req.params;
-  const { isVisible, isFeatured, markupPrice } = req.body;
-
-  const { rows } = await pool.query(`
-    INSERT INTO clinic_products (clinic_id, product_id, is_visible, is_featured, markup_price)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (clinic_id, product_id) DO UPDATE SET
-      is_visible   = COALESCE($3, clinic_products.is_visible),
-      is_featured  = COALESCE($4, clinic_products.is_featured),
-      markup_price = COALESCE($5, clinic_products.markup_price),
-      updated_at   = NOW()
-    RETURNING *
-  `, [clinicId, productId, isVisible, isFeatured, markupPrice]);
-
+router.get('/:itemSku', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM products WHERE item_sku = $1', [req.params.itemSku]);
+  if (!rows[0]) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);
 });
 
 module.exports = router;
-
