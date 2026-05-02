@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Pool } = require('pg');
-const { getProductList } = require('../services/pcpService');
+const { getProductList, getProduct } = require('../services/pcpService');
 const { adminMiddleware, clinicMiddleware } = require('../middleware/auth');
 const pool = new Pool();
 
@@ -27,6 +27,36 @@ router.post('/sync', adminMiddleware, async (req, res) => {
     }
     console.log(`[Sync] Done: ${synced} synced, ${errors} errors`);
   } catch(err) { console.error('[Sync]', err.message); }
+});
+
+router.post('/sync-details', adminMiddleware, async (req, res) => {
+  res.json({ success: true, message: 'Detail sync started in background' });
+  try {
+    const { rows } = await pool.query('SELECT item_sku FROM products WHERE unit_price IS NULL LIMIT 2200');
+    let updated = 0, errors = 0;
+    for (const row of rows) {
+      try {
+        const detail = await getProduct(row.item_sku);
+        if (detail && detail.unitPrice) {
+          await pool.query(`
+            UPDATE products SET
+              unit_price = $1, msrp = $2, map = $3, pcpsrp = $4,
+              prescription_required = $5, quantity_available = $6,
+              item_status = $7, brand_name = $8, manufacturer_name = $9,
+              animal_type = $10, product_type = $11, image_url = $12,
+              last_synced_at = NOW()
+            WHERE item_sku = $13
+          `, [detail.unitPrice, detail.msrp, detail.map, detail.pcpsrp,
+              detail.prescriptionRequired, detail.quantityAvailable,
+              detail.itemStatus, detail.brandName, detail.manufacturerName,
+              detail.animalType, detail.productType, detail.imageFileLink,
+              row.item_sku]);
+          updated++;
+        }
+      } catch(e) { errors++; }
+    }
+    console.log(`[Detail Sync] Done: ${updated} updated, ${errors} errors`);
+  } catch(err) { console.error('[Detail Sync]', err.message); }
 });
 
 router.get('/clinic', clinicMiddleware, async (req, res) => {
