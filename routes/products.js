@@ -32,7 +32,7 @@ router.post('/sync', adminMiddleware, async (req, res) => {
 router.post('/sync-details', adminMiddleware, async (req, res) => {
   res.json({ success: true, message: 'Detail sync started in background' });
   try {
-    const { rows } = await pool.query('SELECT item_sku FROM products WHERE unit_price IS NULL LIMIT 2200');
+    const { rows } = await pool.query('SELECT item_sku FROM products WHERE unit_price IS NULL OR unit_price = 0 LIMIT 2200');
     let updated = 0, errors = 0;
     for (const row of rows) {
       try {
@@ -60,41 +60,62 @@ router.post('/sync-details', adminMiddleware, async (req, res) => {
 });
 
 router.get('/clinic', clinicMiddleware, async (req, res) => {
-  const { clinicId } = req.user;
-  const { rows } = await pool.query(`
-    SELECT p.*, cp.is_visible, cp.is_featured, cp.markup_price, cp.is_hidden
-    FROM products p
-    JOIN clinic_products cp ON cp.product_id = p.id
-    WHERE cp.clinic_id = $1 AND cp.is_hidden = FALSE
-    ORDER BY p.product_title
-  `, [clinicId]);
-  res.json(rows);
+  try {
+    const { clinicId } = req.user;
+    const { rows } = await pool.query(`
+      SELECT 
+        p.id, p.item_sku, p.product_title, p.brand_name, p.animal_type,
+        p.product_type, p.image_url, p.prescription_required,
+        p.unit_price, p.pcpsrp, p.msrp,
+        COALESCE(p.unit_price, 0) + 1 AS clinic_cost,
+        cp.is_visible, cp.is_featured, cp.markup_price, cp.is_hidden
+      FROM products p
+      JOIN clinic_products cp ON cp.product_id = p.id
+      WHERE cp.clinic_id = $1 AND cp.is_hidden = FALSE
+      ORDER BY p.product_title
+    `, [clinicId]);
+    res.json(rows);
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.put('/clinic/:productId', clinicMiddleware, async (req, res) => {
-  const { clinicId } = req.user;
-  const { productId } = req.params;
-  const { is_visible, is_featured, markup_price, is_hidden } = req.body;
-  await pool.query(`
-    UPDATE clinic_products SET
-      is_visible = COALESCE($1, is_visible),
-      is_featured = COALESCE($2, is_featured),
-      markup_price = COALESCE($3, markup_price),
-      is_hidden = COALESCE($4, is_hidden)
-    WHERE clinic_id = $5 AND product_id = $6
-  `, [is_visible, is_featured, markup_price, is_hidden, clinicId, productId]);
-  res.json({ success: true });
+  try {
+    const { clinicId } = req.user;
+    const { productId } = req.params;
+    const { is_visible, is_featured, markup_price, is_hidden } = req.body;
+    await pool.query(`
+      UPDATE clinic_products SET
+        is_visible = COALESCE($1, is_visible),
+        is_featured = COALESCE($2, is_featured),
+        markup_price = COALESCE($3, markup_price),
+        is_hidden = COALESCE($4, is_hidden)
+      WHERE clinic_id = $5 AND product_id = $6
+    `, [is_visible, is_featured, markup_price, is_hidden, clinicId, productId]);
+    res.json({ success: true });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/admin/all', adminMiddleware, async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM products ORDER BY product_title');
-  res.json(rows);
+  try {
+    const { rows } = await pool.query('SELECT * FROM products ORDER BY product_title');
+    res.json(rows);
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/:itemSku', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM products WHERE item_sku = $1', [req.params.itemSku]);
-  if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-  res.json(rows[0]);
+  try {
+    const { rows } = await pool.query('SELECT * FROM products WHERE item_sku = $1', [req.params.itemSku]);
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
