@@ -107,7 +107,7 @@ router.post('/clinic/login', async (req, res) => {
     clinicId: user.clinic_id, clinicSlug: user.slug,
     clinicName: user.clinic_name
   });
-  res.json({ token, user: { id: user.id, email: user.email, clinicId: user.clinic_id, clinicSlug: user.slug } });
+  res.json({ token, user: { id: user.id, email: user.email, role: `clinic_${user.role}`, clinicId: user.clinic_id, clinicSlug: user.slug, clinicName: user.clinic_name } });
 });
 
 // ── PET OWNER REGISTER ────────────────────────────────────────────────────────
@@ -198,3 +198,4 @@ router.post('/customer/create', async (req, res) => {
 });
 
 module.exports = router;
+
