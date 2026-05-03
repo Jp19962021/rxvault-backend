@@ -117,5 +117,30 @@ router.get('/:itemSku', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
+router.get('/storefront/:clinicSlug', async (req, res) => {
+  try {
+    const { clinicSlug } = req.params;
+    const { search } = req.query;
+    const clinic = await pool.query('SELECT id FROM clinics WHERE slug = $1 AND status = $2', [clinicSlug, 'active']);
+    if (!clinic.rows[0]) return res.status(404).json({ error: 'Clinic not found' });
+    const clinicId = clinic.rows[0].id;
+    let query = `
+      SELECT p.*, cp.markup_price, cp.is_featured,
+        COALESCE(cp.markup_price, p.pcpsrp, 0) AS price
+      FROM products p
+      JOIN clinic_products cp ON cp.product_id = p.id
+      WHERE cp.clinic_id = $1 AND cp.is_visible = TRUE AND cp.is_hidden = FALSE
+    `;
+    const params = [clinicId];
+    if (search) {
+      query += ` AND (p.product_title ILIKE $2 OR p.brand_name ILIKE $2 OR p.animal_type ILIKE $2)`;
+      params.push(`%${search}%`);
+    }
+    query += ` ORDER BY cp.is_featured DESC, p.product_title LIMIT 200`;
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 module.exports = router;
